@@ -16,7 +16,7 @@ public class Bank {
     }
 
     public Account createAccount(String ownerName, double initialBalance) {
-        String accountNumber = String.format("ACC-%04d", accounts.size() + 1);
+        String accountNumber = String.format("ACC-%05d", accounts.size() + 1);
         Account account = new Account(accountNumber, ownerName, initialBalance);
         accounts.add(account);
         return account;
