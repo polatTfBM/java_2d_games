@@ -8,6 +8,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.swing.DefaultListModel;
+import javax.swing.JList;
+import javax.swing.JScrollPane;
+import javax.swing.event.ListSelectionEvent;
 
 public class OyunArayuzu extends JFrame {
     private Oyuncu oyuncu;
@@ -28,6 +32,9 @@ public class OyunArayuzu extends JFrame {
     private final JTextField suField = new JTextField();
     private final JTextField dosyaField = new JTextField("rapor.txt");
     private final JTextArea ciktiAlani = new JTextArea();
+    private final JLabel durumEtiketi = new JLabel("Henüz oyuncu yok");
+    private final DefaultListModel<LocalDate> raporListModel = new DefaultListModel<>();
+    private final JList<LocalDate> raporListesi = new JList<>(raporListModel);
 
     public OyunArayuzu() {
         super("Sağlık ve Beslenme Eğitici Oyunu");
@@ -39,7 +46,9 @@ public class OyunArayuzu extends JFrame {
         ciktiAlani.setLineWrap(true);
         ciktiAlani.setWrapStyleWord(true);
         add(new JScrollPane(ciktiAlani), BorderLayout.CENTER);
+        add(olusturRaporListesiPaneli(), BorderLayout.EAST);
         add(olusturFormPanel(), BorderLayout.WEST);
+        add(durumEtiketi, BorderLayout.SOUTH);
         appendCikti("Arayüz hazır. Oyuncu adı girip başlatın.");
     }
 
@@ -99,6 +108,23 @@ public class OyunArayuzu extends JFrame {
         yukle.addActionListener(e -> raporYukle());
         panel.add(yukle);
 
+        JButton secButton = new JButton("Listeden Aktif Yap");
+        secButton.addActionListener(e -> listedenAktifRaporSec());
+        panel.add(secButton);
+
+        JButton sahteVeriEkle = new JButton("Örnek Günlük Oluştur");
+        sahteVeriEkle.addActionListener(e -> ornekGirdiOlustur());
+        panel.add(sahteVeriEkle);
+
+        return panel;
+    }
+
+    private JPanel olusturRaporListesiPaneli() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.add(new JLabel("Rapor Listesi"), BorderLayout.NORTH);
+        raporListesi.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        raporListesi.addListSelectionListener(this::raporListesiDegisti);
+        panel.add(new JScrollPane(raporListesi), BorderLayout.CENTER);
         return panel;
     }
 
@@ -107,6 +133,7 @@ public class OyunArayuzu extends JFrame {
         try {
             oyuncu = new Oyuncu(ad.isEmpty() ? "Oyuncu" : ad);
             appendCikti("Oyuncu hazır: " + oyuncu.getAd());
+            guncelleDurum();
         } catch (SaglikDegeriGecersizException e) {
             appendCikti("Oyuncu oluşturulamadı: " + e.getMessage());
         }
@@ -125,10 +152,14 @@ public class OyunArayuzu extends JFrame {
             if (aktifRapor.gelecekGunMu()) {
                 appendCikti("Uyarı: gelecekte bir gün seçtiniz.");
             }
+            raporListesiniGuncelle();
+            guncelleDurum();
         } catch (Exception e) {
             aktifRapor = new GunlukRapor(LocalDate.now());
             raporlar.put(aktifRapor.getTarih(), aktifRapor);
             appendCikti("Tarih hatalı, bugüne ayarlandı.");
+            raporListesiniGuncelle();
+            guncelleDurum();
         }
     }
 
@@ -152,6 +183,7 @@ public class OyunArayuzu extends JFrame {
             raporlar.put(aktifRapor.getTarih(), aktifRapor);
             List<? extends Yiyecek> tumYiyecekler = new ArrayList<>(aktifRapor.getYiyecekler());
             appendCikti("Yiyecek eklendi. Toplam: " + tumYiyecekler.size());
+            guncelleDurum();
         } catch (SaglikDegeriGecersizException | NumberFormatException ex) {
             appendCikti("Yiyecek eklenemedi: " + ex.getMessage());
         }
@@ -170,6 +202,7 @@ public class OyunArayuzu extends JFrame {
             aktifRapor.aktiviteEkle(kosu);
             oyuncu.setToplamPuan(oyuncu.getToplamPuan() + kosu.puanHesapla());
             appendCikti("Aktivite eklendi: " + kosu);
+            guncelleDurum();
         } catch (NumberFormatException e) {
             appendCikti("Geçersiz sayı girdiniz: " + e.getMessage());
         } catch (AktiviteSuresiGecersizException e) {
@@ -187,6 +220,7 @@ public class OyunArayuzu extends JFrame {
             oyuncu.setSuMiktari(oyuncu.getSuMiktari() + su);
             aktifRapor.setIcilenSuMl(oyuncu.getSuMiktari());
             appendCikti("Su eklendi, toplam: " + oyuncu.getSuMiktari() + " ml");
+            guncelleDurum();
         } catch (NumberFormatException e) {
             appendCikti("Sayı formatı hatası: " + e.getMessage());
         } catch (SaglikDegeriGecersizException e) {
@@ -204,6 +238,7 @@ public class OyunArayuzu extends JFrame {
             if (aktifRapor.gecmisGunMu()) {
                 appendCikti("Bu rapor geçmiş bir güne ait.");
             }
+            guncelleDurum();
         } catch (Exception e) {
             appendCikti("Rapor hazırlanamadı: " + e.getMessage());
         }
@@ -233,6 +268,71 @@ public class OyunArayuzu extends JFrame {
             }
             appendCikti("Yükleme zamanı: " + DateTimeFormatter.ofPattern("HH:mm:ss").format(LocalDateTime.now()));
         }
+    }
+
+    private void listedenAktifRaporSec() {
+        LocalDate secilen = raporListesi.getSelectedValue();
+        if (secilen == null) {
+            appendCikti("Bir rapor seçin.");
+            return;
+        }
+        aktifRapor = raporlar.get(secilen);
+        if (aktifRapor != null) {
+            tarihField.setText(secilen.toString());
+            appendCikti("Aktif rapor değiştirildi: " + secilen);
+            guncelleDurum();
+        }
+    }
+
+    private void raporListesiDegisti(ListSelectionEvent e) {
+        if (!e.getValueIsAdjusting()) {
+            LocalDate secilen = raporListesi.getSelectedValue();
+            if (secilen != null) {
+                appendCikti("Seçili rapor: " + secilen);
+            }
+        }
+    }
+
+    private void raporListesiniGuncelle() {
+        raporListModel.clear();
+        raporlar.keySet().stream().sorted().forEach(raporListModel::addElement);
+    }
+
+    private void guncelleDurum() {
+        StringBuilder builder = new StringBuilder();
+        if (oyuncu != null) {
+            builder.append("Oyuncu: ").append(oyuncu.getAd());
+            builder.append(" | Puan: ").append(oyuncu.getToplamPuan());
+        } else {
+            builder.append("Oyuncu henüz tanımlı değil");
+        }
+        if (aktifRapor != null) {
+            builder.append(" | Aktif gün: ").append(aktifRapor.getTarih());
+            builder.append(" | Su: ").append(aktifRapor.getIcilenSuMl()).append(" ml");
+            builder.append(" | Yiyecek: ").append(aktifRapor.getYiyecekler().size());
+            builder.append(" | Aktivite: ").append(aktifRapor.getAktiviteler().size());
+        } else {
+            builder.append(" | Aktif gün yok");
+        }
+        durumEtiketi.setText(builder.toString());
+    }
+
+    private void ornekGirdiOlustur() {
+        oyuncuyuBaslat();
+        tarihField.setText(LocalDate.now().toString());
+        yeniGunBaslat();
+        yiyecekAdField.setText("Elma");
+        kaloriField.setText("95");
+        saglikField.setText("80");
+        meyveMiCheck.setSelected(true);
+        yiyecekEkle();
+        kosuSureField.setText("20");
+        kosuMesafeField.setText("3");
+        kiloField.setText("70");
+        aktiviteEkle();
+        suField.setText("250");
+        suIc();
+        raporGoruntule();
     }
 
     private void appendCikti(String mesaj) {
